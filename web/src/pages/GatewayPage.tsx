@@ -289,10 +289,18 @@ export function GatewayPage() {
           hint="Registered adapters"
         />
         <MetricCard
-          label="Healthy adapters"
+          label="Serving records"
           value={formatNumber(
-            (state.data?.departments ?? []).filter((d) => ['CONNECTED', 'AVAILABLE', 'ADAPTER_READY'].includes(d.adapter.status)).length,
+            (state.data?.departments ?? []).filter(
+              (d) =>
+                ['CONNECTED', 'AVAILABLE', 'ADAPTER_READY'].includes(d.adapter.status) ||
+                // A DEMO_DATA adapter is deliberately serving a labelled fixture, not
+                // failing. Counting only live statuses reported this as 0 while every
+                // card below showed "Records available: 5".
+                d.recordsAvailable > 0,
+            ).length,
           )}
+          hint="Live upstream or labelled fixture"
           tone="ok"
         />
         <MetricCard

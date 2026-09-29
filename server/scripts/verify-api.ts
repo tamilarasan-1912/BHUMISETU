@@ -22,23 +22,37 @@ let failed = 0;
  * demonstration dataset that officers would otherwise see in their queue.
  */
 const probeCaseIds: string[] = [];
+const probeRequestIds: string[] = [];
 
 async function cleanupProbes() {
-  if (probeCaseIds.length === 0) return;
+  if (probeCaseIds.length === 0 && probeRequestIds.length === 0) return;
   const { rawPool } = await import('../src/db/client.js');
   const ids = probeCaseIds;
+  const requestIds = probeRequestIds;
+
+  if (requestIds.length > 0) {
+    await rawPool.query('DELETE FROM service_request_events WHERE request_id = ANY($1::uuid[])', [requestIds]);
+    await rawPool.query('DELETE FROM service_requests WHERE request_id = ANY($1::uuid[])', [requestIds]);
+  }
   // case_id is uuid while audit entity_id is text, so the casts differ.
   for (const table of ['case_events', 'case_comments', 'case_assignments']) {
     await rawPool.query(`DELETE FROM ${table} WHERE case_id = ANY($1::uuid[])`, [ids]);
   }
   await rawPool.query('UPDATE service_requests SET linked_case_id = NULL WHERE linked_case_id = ANY($1::uuid[])', [ids]);
   await rawPool.query('DELETE FROM verification_cases WHERE case_id = ANY($1::uuid[])', [ids]);
-  await rawPool.query('DELETE FROM audit_logs WHERE entity_id = ANY($1::text[])', [ids]);
-  console.log(`  \x1b[90mcleaned ${ids.length} probe case(s) from the demonstration dataset\x1b[0m`);
+  await rawPool.query('DELETE FROM audit_logs WHERE entity_id = ANY($1::text[])', [[...ids, ...requestIds]]);
+  console.log(
+    `  \x1b[90mcleaned ${ids.length} probe case(s) and ${requestIds.length} probe service request(s) from the demonstration dataset\x1b[0m`,
+  );
 }
 
 function rememberCase(id: string) {
   probeCaseIds.push(id);
+  return id;
+}
+
+function rememberRequest(id: string) {
+  probeRequestIds.push(id);
   return id;
 }
 
@@ -438,6 +452,165 @@ await check('a deleted case never frees its number for reuse', async () => {
     suffix(third.case_number) > suffix(second.case_number),
     `case numbers must increase monotonically (${second.case_number} -> ${third.case_number})`,
   );
+});
+
+console.log('\nCitizen service requests');
+const officerAuth = { Authorization: `Bearer ${await login('revenue', 'officer@123')}` };
+
+const srCreateRes = await get('/api/service-requests', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', ...citizenAuth },
+  body: JSON.stringify({
+    parcelId: 'PARC-F',
+    requestType: 'OWNERSHIP_VERIFICATION',
+    subject: 'Ownership record needs verification',
+    description: 'The Record of Rights does not appear against this parcel in the citizen view.',
+  }),
+});
+const createdRequest = (await srCreateRes.json()) as {
+  request_id: string;
+  reference_number: string;
+  status: string;
+  assigned_department: string;
+};
+rememberRequest(createdRequest.request_id);
+
+await check('a citizen can raise a service request', () => {
+  assert.equal(srCreateRes.status, 201, `expected 201, got ${srCreateRes.status}`);
+  assert.equal(createdRequest.status, 'SUBMITTED');
+  assert.match(createdRequest.reference_number, /^SR-\d{4}-\d{5}$/, `unexpected reference ${createdRequest.reference_number}`);
+});
+await check('the request is routed to the department that owns the record', () => {
+  // OWNERSHIP_VERIFICATION belongs to Revenue; a routing regression would send
+  // it to the wrong department and the workload board would be wrong.
+  assert.equal(createdRequest.assigned_department, 'Revenue');
+});
+await check('a citizen sees only their own service requests', async () => {
+  const body = await json<{ items: { request_id: string }[] }>('/api/service-requests', { headers: citizenAuth });
+  assert.ok(
+    body.items.some((r) => r.request_id === createdRequest.request_id),
+    'the citizen must be able to read the request they raised',
+  );
+});
+await check('a citizen cannot acknowledge their own request', async () => {
+  // service.request.update is an officer permission; self-approval must be refused.
+  const res = await get(`/api/service-requests/${createdRequest.request_id}/update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...citizenAuth },
+    body: JSON.stringify({ status: 'RESOLVED', note: 'Resolving my own request.' }),
+  });
+  assert.equal(res.status, 403, `expected 403 for a citizen transition, got ${res.status}`);
+});
+await check('an officer can acknowledge a service request', async () => {
+  const res = await get(`/api/service-requests/${createdRequest.request_id}/update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...officerAuth },
+    body: JSON.stringify({ status: 'ACKNOWLEDGED', note: 'Acknowledged and routed for field review.' }),
+  });
+  assert.equal(res.status, 200, `expected 200, got ${res.status}`);
+  const updated = (await res.json()) as { status: string };
+  assert.equal(updated.status, 'ACKNOWLEDGED');
+});
+await check('the service request transition is recorded in the audit trail', async () => {
+  const { rawPool } = await import('../src/db/client.js');
+  const res = await rawPool.query(
+    `SELECT action FROM audit_logs WHERE entity_id = $1 AND entity_type = 'service_request'`,
+    [createdRequest.request_id],
+  );
+  const actions = res.rows.map((r: { action: string }) => r.action);
+  assert.ok(actions.includes('SERVICE_REQUEST_CREATED'), `expected a creation audit entry, saw ${actions.join(', ')}`);
+  assert.ok(actions.includes('SERVICE_REQUEST_UPDATED'), `expected a status-change audit entry, saw ${actions.join(', ')}`);
+});
+
+console.log('\nStatus surfaces stay off the network');
+await check('the gateway answers without waiting on an upstream probe', async () => {
+  // Regression: this endpoint used to await every adapter health() probe, so
+  // Overpass and Bhuvan timeouts pushed it past 20s and the page rendered an
+  // empty department list. It must now read the cached snapshot and return fast.
+  const started = Date.now();
+  const d = await json<{ departments: unknown[] }>('/api/gateway', { headers: officerAuth });
+  const elapsed = Date.now() - started;
+  assert.ok(Array.isArray(d.departments) && d.departments.length > 0, 'gateway must report departments');
+  assert.ok(elapsed < 5000, `gateway took ${elapsed}ms; it must not block on live probes`);
+});
+await check('a repeated gateway read starts no new source runs', async () => {
+  const { rawPool } = await import('../src/db/client.js');
+  const count = async () => Number((await rawPool.query('SELECT count(*)::int AS n FROM source_runs')).rows[0].n);
+  await json('/api/gateway', { headers: officerAuth });
+  const before = await count();
+  await json('/api/gateway', { headers: officerAuth });
+  await json('/api/analytics', { headers: officerAuth });
+  const after = await count();
+  assert.equal(after, before, `status reads must not trigger probes (source_runs ${before} -> ${after})`);
+});
+
+console.log('\nIntegrity rules and evidence');
+await check('the six canonical rules are defined and recomputable', async () => {
+  const d = await json<{ canonical: { ruleCode: string }[] }>('/api/rules');
+  const codes = d.canonical.map((r) => r.ruleCode).sort();
+  assert.deepEqual(
+    codes,
+    ['AREA_MISMATCH', 'BUILDING_UNAPPROVED_CHANGE', 'ENCUMBRANCE_RISK', 'NOT_LINKED', 'OWNERSHIP_MISMATCH', 'TAX_MISMATCH'],
+    `unexpected canonical rule set: ${codes.join(', ')}`,
+  );
+});
+await check('every finding carries evidence that resolves to a source and authority', async () => {
+  // The evidence chain is the product's core claim: finding -> evidence -> source
+  // -> record -> authority. Assert it end to end rather than trusting the UI.
+  const parcels = ['PARC-B', 'PARC-C', 'PARC-D', 'PARC-E', 'PARC-F'];
+  let checked = 0;
+  for (const parcelId of parcels) {
+    const p = await json<{ findings: { ruleCode: string; evidence: Record<string, unknown>[] }[] }>(`/api/passport/${parcelId}`);
+    for (const f of p.findings) {
+      assert.ok(Array.isArray(f.evidence) && f.evidence.length > 0, `${parcelId}/${f.ruleCode} has no evidence`);
+      for (const e of f.evidence) {
+        for (const field of ['sourceId', 'sourceAuthority', 'dataStatus', 'provenance']) {
+          assert.ok(e[field], `${parcelId}/${f.ruleCode} evidence is missing "${field}"`);
+        }
+        checked += 1;
+      }
+    }
+  }
+  assert.ok(checked >= 5, `expected evidence for the demonstration findings, checked ${checked}`);
+});
+await check('the demonstration dataset matches the specified rule per parcel', async () => {
+  // The acceptance criteria name one expected rule per parcel. A cross-parcel
+  // leak would show up here as the wrong code on the wrong parcel.
+  const expected: Record<string, string> = {
+    'PARC-B': 'OWNERSHIP_MISMATCH',
+    'PARC-C': 'AREA_MISMATCH',
+    'PARC-D': 'ENCUMBRANCE_RISK',
+    'PARC-E': 'BUILDING_UNAPPROVED_CHANGE',
+    'PARC-F': 'NOT_LINKED',
+  };
+  for (const [parcelId, ruleCode] of Object.entries(expected)) {
+    const p = await json<{ findings: { ruleCode: string }[] }>(`/api/passport/${parcelId}`);
+    const codes = p.findings.map((f) => f.ruleCode);
+    assert.ok(codes.includes(ruleCode), `${parcelId} must raise ${ruleCode}, saw ${codes.join(', ') || 'none'}`);
+  }
+});
+await check('the clean parcel raises no findings', async () => {
+  const p = await json<{ findings: unknown[] }>('/api/passport/PARC-A');
+  assert.equal(p.findings.length, 0, 'PARC-A must be clean');
+});
+
+console.log('\nTemporal records, reports and honest unavailability');
+await check('temporal versions are exposed to an authorised reader', async () => {
+  const d = await json<{ items: unknown[] }>('/api/temporal', { headers: officerAuth });
+  assert.ok(Array.isArray(d.items), 'temporal records must be returned as a list');
+});
+await check('the parcel CSV report states provenance per row', async () => {
+  const res = await get('/api/reports/parcel/PARC-B?format=csv');
+  assert.ok(res.ok, `CSV report returned ${res.status}`);
+  const text = await res.text();
+  assert.match(text, /^"Section","Field","Value","Source","Authority","Data status"/m, 'CSV must lead with the provenance columns');
+  assert.match(text, /not official government land records/i, 'the report must carry the dataset notice');
+});
+await check('an unconfigured feature reports 501 rather than pretending', async () => {
+  const res = await get('/api/unavailable/pdf');
+  assert.equal(res.status, 501, `expected 501, got ${res.status}`);
+  const body = (await res.json()) as { unavailable: boolean };
+  assert.equal(body.unavailable, true);
 });
 
 await cleanupProbes();

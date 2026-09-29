@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="BHUMISETU application icon">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1622"/>
+      <stop offset="1" stop-color="#101f2e"/>
+    </linearGradient>
+    <linearGradient id="civic" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2db3a8"/>
+      <stop offset="1" stop-color="#5b7fd4"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <g transform="translate(256 246)">
+    <path d="M0 -150 L130 -80 L130 80 L0 150 L-130 80 L-130 -80 Z" fill="none" stroke="url(#civic)" stroke-width="14" opacity="0.95"/>
+    <path d="M0 -150 L0 150 M-130 -80 L130 -80 M-130 80 L130 80" stroke="url(#civic)" stroke-width="6" opacity="0.55"/>
+    <path d="M-130 -80 L0 0 L130 -80" fill="none" stroke="url(#civic)" stroke-width="6" opacity="0.35"/>
+    <circle cx="0" cy="0" r="22" fill="#2db3a8"/>
+  </g>
+  <text x="256" y="452" text-anchor="middle" font-family="system-ui, sans-serif" font-size="46" font-weight="700" letter-spacing="6" fill="#a8bccd">BHUMISETU</text>
+</svg>

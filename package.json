@@ -1,0 +1,28 @@
+{
+  "name": "bhumisetu",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BHUMISETU — Integrated GIS Land Stack & Parcel Intelligence Platform",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm --workspace server run dev",
+    "dev:web": "npm --workspace web run dev",
+    "build": "npm --workspace web run build",
+    "typecheck": "npm --workspace server run typecheck && npm --workspace web run typecheck",
+    "test": "npm --workspace server run test",
+    "migrate": "npm --workspace server run migrate",
+    "seed": "npm --workspace server run seed",
+    "db:reset": "npm --workspace server run db:reset",
+    "start": "npm --workspace server run start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

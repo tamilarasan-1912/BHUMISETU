@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="BHUMISETU">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2db3a8"/>
+      <stop offset="1" stop-color="#5b7fd4"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0b1622"/>
+  <rect x="3" y="3" width="58" height="58" rx="12" fill="url(#g)" opacity="0.9"/>
+  <path d="M32 12 L50 22 L50 42 L32 52 L14 42 L14 22 Z" fill="none" stroke="#06121c" stroke-width="2.4" opacity="0.85"/>
+  <path d="M32 12 L32 52 M14 22 L50 22 M14 42 L50 42" stroke="#06121c" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="32" cy="32" r="4.2" fill="#06121c"/>
+</svg>

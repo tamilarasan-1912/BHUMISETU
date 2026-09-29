@@ -1,0 +1,257 @@
+import type { RoleCode } from '../types/domain.js';
+
+export interface PermissionDefinition {
+  code: string;
+  label: string;
+  description: string;
+}
+
+export interface RoleDefinition {
+  code: RoleCode;
+  label: string;
+  description: string;
+  isOfficer: boolean;
+  isAdmin: boolean;
+  permissions: string[];
+  /** Departments this role can be routed a verification case to. */
+  departments: string[];
+}
+
+export const PERMISSIONS: PermissionDefinition[] = [
+  { code: 'parcel.read.public', label: 'Read permitted parcel information', description: 'Masked, citizen-safe parcel view.' },
+  { code: 'parcel.read.full', label: 'Read full parcel record set', description: 'All linked governance records.' },
+  { code: 'parcel.read.internal', label: 'Read internal notes', description: 'Officer-only notes and internal case comments.' },
+  { code: 'parcel.export.passport', label: 'Export land passport', description: 'Download the parcel land passport.' },
+  { code: 'parcel.export.geojson', label: 'Export GeoJSON', description: 'Download parcel GeoJSON.' },
+  { code: 'finding.read', label: 'Read integrity findings', description: 'View computed integrity findings and evidence.' },
+  { code: 'finding.update', label: 'Update finding lifecycle', description: 'Acknowledge, resolve, or dismiss a finding.' },
+  { code: 'case.read.own', label: 'Read own cases', description: 'Read cases the user created.' },
+  { code: 'case.read.all', label: 'Read all cases', description: 'Read the full verification case queue.' },
+  { code: 'case.create', label: 'Create verification case', description: 'Raise a verification case.' },
+  { code: 'case.update', label: 'Update case status', description: 'Advance case status through the workflow.' },
+  { code: 'case.assign', label: 'Assign case', description: 'Assign or reassign a case to an officer or department.' },
+  { code: 'case.comment.internal', label: 'Add internal comment', description: 'Post officer-only case notes.' },
+  { code: 'case.escalate', label: 'Escalate case', description: 'Escalate to a higher authority.' },
+  { code: 'case.field.verify', label: 'Record field verification', description: 'Log an on-site verification outcome.' },
+  { code: 'service.request.create', label: 'Create service request', description: 'Submit a citizen service request.' },
+  { code: 'service.request.read', label: 'Read service requests', description: 'Read service request queue.' },
+  { code: 'service.request.update', label: 'Update service request', description: 'Advance service request status.' },
+  { code: 'analytics.read', label: 'Read analytics', description: 'View computed platform analytics.' },
+  { code: 'gateway.read', label: 'Read department gateway', description: 'View department adapter status.' },
+  { code: 'source.read', label: 'Read source catalogue', description: 'View data source catalogue and health.' },
+  { code: 'source.configure', label: 'Configure sources', description: 'Enable/disable sources and probe them.' },
+  { code: 'rule.read', label: 'Read rule definitions', description: 'View integrity rule definitions.' },
+  { code: 'rule.configure', label: 'Configure rules', description: 'Change severity, deduction and enablement.' },
+  { code: 'audit.read', label: 'Read audit log', description: 'Inspect the append-only audit trail.' },
+  { code: 'user.manage', label: 'Manage users', description: 'Create and update user accounts and roles.' },
+  { code: 'system.health', label: 'View system health', description: 'Inspect platform health and diagnostics.' },
+];
+
+export const PERMISSION_CODES = PERMISSIONS.map((p) => p.code);
+
+export const ROLES: RoleDefinition[] = [
+  {
+    code: 'CITIZEN',
+    label: 'Citizen',
+    description: 'Public user. Masked parcel view, own service requests, own cases.',
+    isOfficer: false,
+    isAdmin: false,
+    permissions: [
+      'parcel.read.public',
+      'parcel.export.passport',
+      'finding.read',
+      'case.read.own',
+      'case.create',
+      'service.request.create',
+      'source.read',
+    ],
+    departments: [],
+  },
+  {
+    code: 'FIELD_OFFICER',
+    label: 'Field Officer',
+    description: 'Assigned parcels and cases; records field verification outcomes.',
+    isOfficer: true,
+    isAdmin: false,
+    permissions: [
+      'parcel.read.public',
+      'parcel.read.full',
+      'parcel.export.passport',
+      'parcel.export.geojson',
+      'finding.read',
+      'finding.update',
+      'case.read.all',
+      'case.update',
+      'case.comment.internal',
+      'case.field.verify',
+      'analytics.read',
+      'source.read',
+      'system.health',
+    ],
+    departments: ['Survey/GIS'],
+  },
+  {
+    code: 'REVENUE_OFFICER',
+    label: 'Revenue Officer',
+    description: 'RoR and ownership reconciliation workflow.',
+    isOfficer: true,
+    isAdmin: false,
+    permissions: [
+      'parcel.read.public',
+      'parcel.read.full',
+      'parcel.read.internal',
+      'parcel.export.passport',
+      'parcel.export.geojson',
+      'finding.read',
+      'finding.update',
+      'case.read.all',
+      'case.create',
+      'case.update',
+      'case.assign',
+      'case.comment.internal',
+      'case.escalate',
+      'service.request.read',
+      'service.request.update',
+      'analytics.read',
+      'gateway.read',
+      'source.read',
+      'audit.read',
+      'system.health',
+    ],
+    departments: ['Revenue'],
+  },
+  {
+    code: 'REGISTRATION_OFFICER',
+    label: 'Registration Officer',
+    description: 'Registration and deed records.',
+    isOfficer: true,
+    isAdmin: false,
+    permissions: [
+      'parcel.read.public',
+      'parcel.read.full',
+      'parcel.export.passport',
+      'finding.read',
+      'finding.update',
+      'case.read.all',
+      'case.update',
+      'case.comment.internal',
+      'service.request.read',
+      'analytics.read',
+      'gateway.read',
+      'source.read',
+      'system.health',
+    ],
+    departments: ['Registration'],
+  },
+  {
+    code: 'MUNICIPAL_OFFICER',
+    label: 'Municipal Officer',
+    description: 'Property tax and municipal records.',
+    isOfficer: true,
+    isAdmin: false,
+    permissions: [
+      'parcel.read.public',
+      'parcel.read.full',
+      'parcel.export.passport',
+      'finding.read',
+      'finding.update',
+      'case.read.all',
+      'case.update',
+      'case.comment.internal',
+      'service.request.read',
+      'service.request.update',
+      'analytics.read',
+      'gateway.read',
+      'source.read',
+      'system.health',
+    ],
+    departments: ['Municipal Tax'],
+  },
+  {
+    code: 'PLANNING_OFFICER',
+    label: 'Planning Officer',
+    description: 'Planning, zoning and building approval records.',
+    isOfficer: true,
+    isAdmin: false,
+    permissions: [
+      'parcel.read.public',
+      'parcel.read.full',
+      'parcel.export.passport',
+      'parcel.export.geojson',
+      'finding.read',
+      'finding.update',
+      'case.read.all',
+      'case.update',
+      'case.comment.internal',
+      'service.request.read',
+      'analytics.read',
+      'gateway.read',
+      'source.read',
+      'system.health',
+    ],
+    departments: ['Planning'],
+  },
+  {
+    code: 'JUDICIARY_VIEWER',
+    label: 'Judiciary Viewer',
+    description: 'Read-only access to judiciary-linked parcels.',
+    isOfficer: true,
+    isAdmin: false,
+    permissions: [
+      'parcel.read.public',
+      'parcel.read.full',
+      'finding.read',
+      'case.read.all',
+      'analytics.read',
+      'gateway.read',
+      'source.read',
+    ],
+    departments: ['Judiciary'],
+  },
+  {
+    code: 'GIS_ADMIN',
+    label: 'GIS Administrator',
+    description: 'Layer configuration, source health, spatial data quality.',
+    isOfficer: true,
+    isAdmin: true,
+    permissions: [
+      'parcel.read.public',
+      'parcel.read.full',
+      'parcel.read.internal',
+      'parcel.export.passport',
+      'parcel.export.geojson',
+      'finding.read',
+      'case.read.all',
+      'analytics.read',
+      'gateway.read',
+      'source.read',
+      'source.configure',
+      'rule.read',
+      'audit.read',
+      'system.health',
+    ],
+    departments: ['Survey/GIS'],
+  },
+  {
+    code: 'SYSTEM_ADMIN',
+    label: 'System Administrator',
+    description: 'Full platform configuration and administration.',
+    isOfficer: true,
+    isAdmin: true,
+    permissions: PERMISSION_CODES,
+    departments: ['Revenue', 'Registration', 'Municipal Tax', 'Planning', 'Judiciary', 'Survey/GIS'],
+  },
+];
+
+export const DEPARTMENTS = [
+  'Revenue',
+  'Registration',
+  'Municipal Tax',
+  'Planning',
+  'Judiciary',
+  'Survey/GIS',
+] as const;
+
+export function permissionsForRole(code: string): string[] {
+  return ROLES.find((r) => r.code === code)?.permissions ?? [];
+}

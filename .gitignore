@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+web/dist/
+web/dev-dist/
+server/dist/
+*.tsbuildinfo
+
+# Environment and secrets — never commit credentials
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+
+# Test and tooling caches
+coverage/
+.vitest/
+.agent_tmp/

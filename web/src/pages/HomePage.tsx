@@ -464,13 +464,20 @@ export function HomePage() {
 }
 
 function RecentActivityPanel() {
-  const audit = useAsync((s) => api.audit({ limit: 8 }, s), []);
+  // The audit trail is permission-gated. Requesting it while signed out
+  // guarantees a 401 and a console error on the landing page, so the fetch is
+  // held back until the session actually carries the capability; the panel then
+  // falls through to its existing restricted-state message.
+  const { user } = useApp();
+  const canReadAudit = Boolean(user?.permissions?.includes('audit.read'));
+  const audit = useAsync((s) => api.audit({ limit: 8 }, s), [canReadAudit], { enabled: canReadAudit });
+  const denied = !canReadAudit || Boolean(audit.error);
   return (
     <GlassPanel>
       <CardHead title="Recent activity" subtitle="Latest audit-derived platform events" />
       {audit.loading ? (
         <LoadingState lines={3} />
-      ) : audit.error ? (
+      ) : denied ? (
         <EmptyState
           title="Activity feed requires officer access"
           icon="⚑"

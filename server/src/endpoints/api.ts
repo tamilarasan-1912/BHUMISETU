@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { rawPool } from '../db/client.js';
 import { attachUser, login, logout, requireAuth, requirePermission, capabilityMatrix } from '../auth/session.js';
 import { maskingFor } from '../auth/policy.js';
-import { asyncHandler, badRequest, envelope, notFound, parse, rateLimit, unauthorized, HttpError } from '../helpers/http.js';
+import { asyncHandler, badRequest, envelope, notFound, parse, rateLimit, unauthorized, uuidParam, caseRefParam, HttpError } from '../helpers/http.js';
 import { writeAudit } from '../services/audit.js';
 import { listParcels, loadRecordSets, districtsWithCounts } from '../services/parcel-repository.js';
 import { buildIntelligence, buildTimeline, evidenceForFindings, provenanceFor, reconcileAllFindings } from '../services/intelligence.js';
@@ -746,11 +746,11 @@ api.patch(
       req.body,
       'finding update',
     );
-    const before = await rawPool.query(`SELECT * FROM integrity_findings WHERE finding_id = $1::uuid`, [req.params.findingId]);
+    const before = await rawPool.query(`SELECT * FROM integrity_findings WHERE finding_id = $1::uuid`, [uuidParam(req.params.findingId, 'Finding')]);
     if (before.rowCount === 0) throw notFound('Finding not found');
     const updated = await rawPool.query(
       `UPDATE integrity_findings SET status = $2, updated_at = now() WHERE finding_id = $1::uuid RETURNING *`,
-      [req.params.findingId, body.status],
+      [uuidParam(req.params.findingId, 'Finding'), body.status],
     );
     await writeAudit({
       actor: req.user!.username,
@@ -847,7 +847,7 @@ api.get(
   '/cases/:caseId',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const row = await getCase(req.params.caseId);
+    const row = await getCase(caseRefParam(req.params.caseId));
     if (!row) throw notFound('Case not found');
     const canAll = req.user!.permissions.includes('case.read.all');
     if (!canAll && String(row.created_by) !== req.user!.userId) {
@@ -924,7 +924,7 @@ api.post(
       req.body,
       'case update payload',
     );
-    const row = await updateCase(req.params.caseId, {
+    const row = await updateCase(caseRefParam(req.params.caseId), {
       ...body,
       actor: {
         userId: req.user!.userId,
@@ -1098,7 +1098,7 @@ api.post(
       'service request update',
     );
     const row = await updateServiceRequest({
-      requestId: req.params.requestId,
+      requestId: uuidParam(req.params.requestId, 'Service request'),
       status: body.status,
       note: body.note,
       linkCaseId: body.linkCaseId ?? null,
@@ -1116,7 +1116,7 @@ api.get('/notifications', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 api.post('/notifications/:id/read', requireAuth, asyncHandler(async (req, res) => {
-  const row = await markNotificationRead(req.params.id, req.user!.userId);
+  const row = await markNotificationRead(uuidParam(req.params.id, 'Notification'), req.user!.userId);
   if (!row) throw notFound('Notification not found');
   res.json(row);
 }));
@@ -1429,7 +1429,7 @@ api.get('/reports/parcel/:parcelId', asyncHandler(async (req, res) => {
 }));
 
 api.get('/reports/case/:caseId', requireAuth, asyncHandler(async (req, res) => {
-  const row = await getCase(req.params.caseId);
+  const row = await getCase(caseRefParam(req.params.caseId));
   if (!row) throw notFound('Case not found');
   res.json({
     reportType: 'VERIFICATION_CASE_REPORT',

@@ -24,6 +24,28 @@ export const conflict = (msg: string) => new HttpError(409, 'CONFLICT', msg);
 export const tooMany = (msg = 'Too many requests') => new HttpError(429, 'RATE_LIMITED', msg);
 export const upstreamUnavailable = (msg: string) => new HttpError(503, 'UPSTREAM_UNAVAILABLE', msg);
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Validate a path parameter that must be a uuid here and now — used where no
+ * secondary human-readable key exists to fall back on.
+ */
+export function uuidParam(value: string, label = 'Resource'): string {
+  if (!UUID_RE.test(value)) throw notFound(`${label} not found`);
+  return value;
+}
+
+/**
+ * A case may be addressed by uuid or by its display number. Reject only values
+ * that could be neither, so a well-formed reference reaches the lookup that
+ * knows how to resolve it instead of being turned away at the edge.
+ */
+export function caseRefParam(value: string, label = 'Case'): string {
+  const ok = UUID_RE.test(value) || /^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(value);
+  if (!ok) throw notFound(`${label} not found`);
+  return value;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Validation                                                                 */
 /* -------------------------------------------------------------------------- */

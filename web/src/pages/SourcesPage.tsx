@@ -275,7 +275,7 @@ export function SourcesPage() {
                     <div className="label">Capabilities</div>
                     <div className="chip-row" style={{ marginTop: 5 }}>
                       {s.capability.map((c) => (
-                        <span key={c} className="badge badge-neutral">
+                        <span key={c} className="badge badge-neutral badge-wrap">
                           {c}
                         </span>
                       ))}

@@ -72,7 +72,19 @@ export default defineConfig({
       },
     },
   },
-  preview: { host: '0.0.0.0', port: 12000, allowedHosts: true },
+  preview: {
+    host: '0.0.0.0',
+    port: 12000,
+    allowedHosts: true,
+    // Preview serves the production bundle; without this the built app has no
+    // API behind it and every page reports a network failure.
+    proxy: {
+      '/api': {
+        target: process.env.API_PROXY_TARGET || 'http://127.0.0.1:12001',
+        changeOrigin: true,
+      },
+    },
+  },
   build: {
     target: 'es2020',
     sourcemap: false,

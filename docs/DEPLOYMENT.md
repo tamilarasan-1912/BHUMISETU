@@ -83,6 +83,31 @@ NODE_ENV=production \
 Serve `web/dist` from any static host or reverse proxy and point it at the API. The client
 reads the API base URL from its environment; it holds no secrets.
 
+## Verifying a running deployment
+
+Two harnesses exercise the application beyond unit tests. Both need the API and web
+server running:
+
+```bash
+npm run verify:api                                    # API contract and workflow checks
+npm run audit:ui -- --label desktop --width 1440 --height 900
+npm run audit:ui -- --label mobile  --width 390  --height 844
+```
+
+`verify:api` drives the real HTTP surface and cleans up the records it creates.
+
+`audit:ui` drives a headless Chromium over the DevTools Protocol and visits every route,
+failing on any console error, uncaught exception, or horizontal overflow at the given
+viewport. Run it at several widths when changing layout. A missing tile or a failed call
+to a public upstream that the app already degrades on is treated as expected; anything
+else is reported. Against the production build, point it at the preview server:
+
+```bash
+npm --workspace web run build
+npm --workspace web run preview -- --port 12010   # has an API proxy
+npm run audit:ui -- --base http://localhost:12010 --label prod --width 1440 --height 900
+```
+
 ## Database operations
 
 | Task | Command | Notes |

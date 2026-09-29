@@ -22,6 +22,10 @@ const MOBILE_NAV = [
   { to: '/intelligence', label: 'Intel', icon: '◆' },
   { to: '/officer', label: 'Officer', icon: '⚑' },
   { to: '/cases', label: 'Cases', icon: '⚖' },
+  { to: '/analytics', label: 'Analytics', icon: '▦' },
+  { to: '/gateway', label: 'Gateway', icon: '⇄' },
+  { to: '/sources', label: 'Sources', icon: '⛁' },
+  { to: '/studio', label: 'Studio', icon: '⚙' },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -67,12 +71,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           title="Real GIS context is combined with demonstration governance records in this deployment."
         >
           <span className="dot" style={{ background: 'currentColor' }} aria-hidden="true" />
-          {metaLoading ? 'Loading…' : metaError ? 'Mode unavailable' : 'Mixed — real context + demonstration records'}
+          <span className="mode-long">
+            {metaLoading ? 'Loading…' : metaError ? 'Mode unavailable' : 'Mixed — real context + demonstration records'}
+          </span>
+          <span className="mode-short" aria-hidden="true">
+            {metaLoading ? '…' : metaError ? 'N/A' : 'Mixed'}
+          </span>
         </span>
 
         <button
           type="button"
-          className="btn btn-sm"
+          className="btn btn-sm header-search"
           onClick={() => setPaletteOpen(true)}
           aria-haspopup="dialog"
           aria-expanded={paletteOpen}
@@ -82,7 +91,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <button
           type="button"
-          className="btn btn-sm btn-icon"
+          className="btn btn-sm btn-icon header-theme"
           onClick={toggleTheme}
           aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
           title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
@@ -111,7 +120,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         ) : (
-          <button type="button" className="btn btn-sm btn-primary" onClick={() => navigate('/login')}>
+          <button type="button" className="btn btn-sm btn-primary header-signin" onClick={() => navigate('/login')}>
             Sign in
           </button>
         )}

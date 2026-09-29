@@ -246,13 +246,25 @@ pre,
   gap: 14px;
 }
 .grid-2 {
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
 }
 .grid-3 {
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
 }
 .grid-4 {
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+}
+/* Grid and flex children default to a min-content floor, which lets a wide
+   table or long unbroken label push the whole page past the viewport. */
+.grid > *,
+.map-layout > * {
+  min-width: 0;
+}
+.card-head > .grow,
+.card-head .card-title,
+.card-head .card-sub {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .hidden {
   display: none;
@@ -598,6 +610,14 @@ pre,
   border-radius: var(--radius-pill);
   border: 1px solid transparent;
   white-space: nowrap;
+}
+/* Status labels are short and fixed, but capability/description chips carry
+   arbitrary-length text and must be allowed to wrap on narrow screens. */
+.badge-wrap {
+  white-space: normal;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 .badge-ok {
   background: var(--ok-dim);
@@ -1588,6 +1608,9 @@ table.data caption {
   border-color: rgba(161, 129, 214, 0.42);
   color: var(--demo);
 }
+.data-mode .mode-short {
+  display: none;
+}
 
 /* ------------------------------------------------------------------ responsive */
 
@@ -1620,6 +1643,31 @@ table.data caption {
   :root {
     --header-h: 56px;
   }
+  .app-header {
+    gap: 6px;
+    padding: 0 10px;
+  }
+  .app-header .data-mode .mode-long {
+    display: none;
+  }
+  .app-header .data-mode .mode-short {
+    display: inline;
+  }
+  /* The global data-mode indicator is provenance-critical, so it stays; the
+     palette's compact search and theme toggles step aside to make room. */
+  .header-search,
+  .header-theme {
+    display: none;
+  }
+  .brand-mark {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+    font-size: 13px;
+  }
+  .brand-name {
+    font-size: 14px;
+  }
   .app-nav {
     display: none;
   }
@@ -1631,7 +1679,14 @@ table.data caption {
     z-index: var(--z-nav);
     display: flex;
     align-items: stretch;
-    justify-content: space-around;
+    /* Nine destinations do not fit a phone, so the bar scrolls sideways
+       instead of stretching the document past the viewport. */
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
     gap: 2px;
     padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
     background: linear-gradient(180deg, rgba(11, 22, 34, 0.8), rgba(11, 22, 34, 0.96));
@@ -1639,11 +1694,15 @@ table.data caption {
     -webkit-backdrop-filter: blur(var(--blur-strong));
     border-top: 1px solid var(--border-soft);
   }
+  .mobile-tabs::-webkit-scrollbar {
+    display: none;
+  }
   [data-theme='light'] .mobile-tabs {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.98));
   }
   .mobile-tab {
-    flex: 1;
+    flex: 0 0 auto;
+    min-width: 62px;
     display: flex;
     flex-direction: column;
     align-items: center;

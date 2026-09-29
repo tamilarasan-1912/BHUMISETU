@@ -14,6 +14,7 @@ npm test                       # 82 tests (vitest, both workspaces resolve here)
 cd server && npx vitest run    # same 82 via the server workspace directly
 npm run build                  # web production build + Workbox precache
 cd server && npm run verify:api  # live API harness, needs a running server
+npm run audit:ui -- --label desktop --width 1440 --height 900   # browser console + layout
 ```
 
 `npm run verify:api` requires the API on `http://localhost:12001` (override with
@@ -22,12 +23,23 @@ so it is idempotent — after a clean run the DB is back to **1 case, 0 service 
 If a run crashes before cleanup, probe rows are left behind; check
 `SELECT count(*) FROM verification_cases` if counts look inflated.
 
+`npm run audit:ui` drives headless Chromium over CDP (`scripts/browser-audit.py`) against
+`http://localhost:12000` and fails on any console error, uncaught exception, or horizontal
+overflow at the given viewport. Sweep 360 / 390 / 768 / 1024 / 1440 when touching layout.
+It does not check the production build by default — see `docs/DEPLOYMENT.md` to point
+`--base` at the preview server. Note it appends `PASSPORT_VIEWED` audit rows; that is the
+append-only audit trail working as designed, not test residue to clean.
+
 ## Non-obvious API contract facts
 
 These cost real debug cycles. Check them before writing assertions.
 
 - **`/api/gateway`, `/api/analytics` and `/api/temporal` require authentication** and return
   401 unauthenticated. Use the seeded `revenue` / `officer@123` officer token.
+- **Permission-gate optional fetches with `useAsync(..., { enabled })`,** not by hoping the
+  request succeeds. `/api/audit` needs `audit.read`; the landing page holds the request back
+  until `user.permissions` contains it, because an unauthenticated call guarantees a 401 and
+  a console error. Any panel that is optional for signed-out visitors should do the same.
 - **`/api/rules`** returns `{ items, canonical }`. `canonical` entries are camelCase
   (`ruleCode`), while `items` (raw DB rows) are snake_case (`rule_code`).
 - **Does not exist:** `GET /api/findings/:findingId`. Only `PATCH` is registered there.

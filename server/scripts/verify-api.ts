@@ -400,6 +400,67 @@ await check('an officer can advance a case and the change is audited', async () 
     'the status change must appear in the audit trail',
   );
 });
+await check('a case can be addressed by its display number, not only its uuid', async () => {
+  // Regression: the interface shows the case number as the case's identity, but
+  // every route queried case_id (uuid). A case number therefore produced a 500
+  // from a Postgres uuid cast, and the identifier the user actually sees was not
+  // dereferenceable. Both forms must resolve to the same case.
+  const officerAuth = { Authorization: `Bearer ${await login('revenue', 'officer@123')}` };
+  const created = (await (
+    await get('/api/cases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...officerAuth },
+      body: JSON.stringify({ parcelId: 'PARC-B', title: 'Case number lookup probe', description: 'address the case by its number' }),
+    })
+  ).json()) as { case_id: string; case_number: string };
+  rememberCase(created.case_id);
+
+  const byNumber = await get(`/api/cases/${encodeURIComponent(created.case_number)}`, { headers: officerAuth });
+  assert.equal(byNumber.status, 200, `reading by case number returned ${byNumber.status}`);
+  const detail = (await byNumber.json()) as { case_id: string; events: unknown[] };
+  assert.equal(detail.case_id, created.case_id, 'the case number must resolve to the same case');
+  assert.ok(detail.events.length > 0, 'the resolved case must carry its events');
+
+  const report = await get(`/api/reports/case/${encodeURIComponent(created.case_number)}`, { headers: officerAuth });
+  assert.equal(report.status, 200, `case report by number returned ${report.status}`);
+
+  // A write by number must land on the same case, with its event and audit record.
+  const updated = await get(`/api/cases/${encodeURIComponent(created.case_number)}/update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...officerAuth },
+    body: JSON.stringify({ status: 'UNDER_REVIEW', reason: 'Advancing a case addressed by its number.' }),
+  });
+  assert.equal(updated.status, 200, `updating by case number returned ${updated.status}`);
+  const after = await json<{ case_id: string; status: string; events: { event_type: string }[] }>(
+    `/api/cases/${created.case_id}`,
+    { headers: officerAuth },
+  );
+  assert.equal(after.case_id, created.case_id, 'a write by number must not create a second case');
+  assert.equal(after.status, 'UNDER_REVIEW', 'the status change must land on the addressed case');
+  assert.ok(
+    after.events.some((e) => e.event_type === 'STATUS_CHANGED'),
+    'a status change by case number must still write a case event',
+  );
+});
+await check('an unaddressable identifier is refused, never a server error', async () => {
+  // A malformed identifier must be a clean not-found. It previously reached
+  // Postgres and surfaced as a 500 with the driver message attached.
+  const officerAuth = { Authorization: `Bearer ${await login('revenue', 'officer@123')}` };
+  const adminAuth = { Authorization: `Bearer ${await login('admin', 'admin@123')}` };
+  const probes: [string, RequestInit | undefined, Record<string, string>][] = [
+    ['/api/cases/not-a-uuid', undefined, officerAuth],
+    ['/api/reports/case/not-a-uuid', undefined, officerAuth],
+    ['/api/notifications/not-a-uuid/read', { method: 'POST' }, officerAuth],
+    ['/api/findings/not-a-uuid', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'RESOLVED', reason: 'probe' }) }, adminAuth],
+  ];
+  for (const [path, init, auth] of probes) {
+    const res = await get(path, { ...init, headers: { ...auth, ...(init?.headers as Record<string, string> | undefined) } });
+    assert.ok(res.status < 500, `${path} returned ${res.status}; an unaddressable id must not be a server error`);
+  }
+  // A genuinely absent but well-formed identifier stays a not-found.
+  const absent = await get('/api/cases/00000000-0000-0000-0000-000000000000', { headers: officerAuth });
+  assert.equal(absent.status, 404, `an absent case must be 404, got ${absent.status}`);
+});
 await check('an illegal workflow jump is rejected', async () => {
   const officerAuth = { Authorization: `Bearer ${await login('revenue', 'officer@123')}` };
   const created = (await (

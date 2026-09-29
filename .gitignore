@@ -25,3 +25,5 @@ logs/
 coverage/
 .vitest/
 .agent_tmp/
+__pycache__/
+*.py[cod]

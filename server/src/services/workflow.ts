@@ -248,15 +248,22 @@ export interface UpdateCaseInput {
   requestId?: string | null;
 }
 
-export async function updateCase(caseId: string, input: UpdateCaseInput) {
+export async function updateCase(caseRef: string, input: UpdateCaseInput) {
   const client = await rawPool.connect();
   try {
     await client.query('BEGIN');
+    // Resolve the identifier first so the lock, every write and the audit record
+    // all key on the same canonical uuid regardless of which form was supplied.
+    const lookup = await client.query(
+      `SELECT case_id FROM verification_cases c WHERE ${uuidOrNumber(caseRef)}`,
+      [caseRef],
+    );
+    const caseId = lookup.rows[0] ? String(lookup.rows[0].case_id) : caseRef;
     await advisoryLock(client, `case-${caseId}`);
 
     const beforeRes = await client.query(`SELECT * FROM verification_cases WHERE case_id = $1 FOR UPDATE`, [caseId]);
     const before = beforeRes.rows[0];
-    if (!before) throw notFound(`Case ${caseId} not found`);
+    if (!before) throw notFound(`Case ${caseRef} not found`);
 
     const parcelId = String(before.parcel_id);
 
@@ -344,7 +351,7 @@ export async function updateCase(caseId: string, input: UpdateCaseInput) {
     }
 
     if (input.assignedOfficer !== undefined && input.assignedOfficer !== before.assigned_officer) {
-      await client.query(`UPDATE case_assignments SET is_current = false WHERE case_id = $1 AND is_current = true`, [caseId]);
+      await client.query(`UPDATE case_assignments SET is_current = false WHERE case_id = $1 AND is_current = true`, [before.case_id]);
       await client.query(
         `INSERT INTO case_assignments (case_id, assigned_to, assigned_role, department, assigned_by, note)
          VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -484,6 +491,17 @@ export async function listCases(filters: CaseListFilters) {
   return { rows: res.rows, total: Number(countRes.rows[0]?.total ?? 0) };
 }
 
+/**
+ * A case is addressable by its uuid primary key or by its human-readable case
+ * number (e.g. BHM-DEMO-0001), which is what the interface displays as the
+ * case's identity. uuid_or_number keeps both write and read paths on one
+ * predicate, so a case can never be found by one and missed by the other.
+ */
+const uuidOrNumber = (v: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+    ? `c.case_id = $1::uuid`
+    : `c.case_number = $1`;
+
 export async function getCase(caseId: string) {
   const res = await rawPool.query(
     `SELECT c.*, p.display_id, p.district, p.village, p.taluk, p.area_sqft, p.latitude, p.longitude,
@@ -491,25 +509,26 @@ export async function getCase(caseId: string) {
      FROM verification_cases c
      JOIN parcels p ON p.parcel_id = c.parcel_id
      LEFT JOIN users u ON u.user_id = c.assigned_officer
-     WHERE c.case_id = $1`,
+     WHERE ${uuidOrNumber(caseId)}`,
     [caseId],
   );
   const row = res.rows[0];
   if (!row) return null;
+  const resolvedId = String(row.case_id);
 
   const [events, comments, assignments, findings] = await Promise.all([
     rawPool.query(
       `SELECT * FROM case_events WHERE case_id = $1 ORDER BY created_at ASC`,
-      [caseId],
+      [resolvedId],
     ),
     rawPool.query(
       `SELECT * FROM case_comments WHERE case_id = $1 ORDER BY created_at ASC`,
-      [caseId],
+      [resolvedId],
     ),
     rawPool.query(
       `SELECT ca.*, u.full_name AS assignee_name FROM case_assignments ca
        LEFT JOIN users u ON u.user_id = ca.assigned_to WHERE ca.case_id = $1 ORDER BY ca.created_at DESC`,
-      [caseId],
+      [resolvedId],
     ),
     rawPool.query(
       `SELECT * FROM integrity_findings WHERE parcel_id = $1 ORDER BY severity`,

@@ -391,7 +391,8 @@ export async function buildTimeline(
                   'Record change: '||tv.change_type AS title,
                   coalesce(tv.reason,'Recorded version change') AS description,
                   tv.source_id, 'Demo fixture' AS source_authority, 'DEMONSTRATION' AS data_status
-                FROM temporal_versions tv WHERE tv.parcel_id = $1`,
+                FROM temporal_versions tv
+                WHERE tv.parcel_id = $1 AND tv.entity_type <> 'case'`,
       params: [parcelId],
     },
   ];

@@ -38,9 +38,27 @@ async function cleanupProbes() {
   for (const table of ['case_events', 'case_comments', 'case_assignments']) {
     await rawPool.query(`DELETE FROM ${table} WHERE case_id = ANY($1::uuid[])`, [ids]);
   }
+  // Case transitions also write temporal_versions rows carrying the parcel id,
+  // which the parcel timeline reads. They belong to the case, not the parcel, so
+  // they are removed with it.
+  await rawPool.query(`DELETE FROM temporal_versions WHERE entity_type = 'case' AND entity_id = ANY($1::text[])`, [ids]);
   await rawPool.query('UPDATE service_requests SET linked_case_id = NULL WHERE linked_case_id = ANY($1::uuid[])', [ids]);
   await rawPool.query('DELETE FROM verification_cases WHERE case_id = ANY($1::uuid[])', [ids]);
+  // Remove the probe's own audit rows, then sweep the table for records whose
+  // case no longer exists.
   await rawPool.query('DELETE FROM audit_logs WHERE entity_id = ANY($1::text[])', [[...ids, ...requestIds]]);
+  // Agents of a deleted case outlive the row itself: audit and temporal records
+  // are addressed by case id, not by a foreign key, so nothing removes them
+  // automatically. Sweep for anything still pointing at a case that no longer
+  // exists, which also heals rows left by a run that crashed before cleanup.
+  await rawPool.query(
+    `DELETE FROM audit_logs a WHERE a.entity_type = 'verification_case'
+       AND NOT EXISTS (SELECT 1 FROM verification_cases c WHERE c.case_id::text = a.entity_id)`,
+  );
+  await rawPool.query(
+    `DELETE FROM temporal_versions tv WHERE tv.entity_type = 'case'
+       AND NOT EXISTS (SELECT 1 FROM verification_cases c WHERE c.case_id::text = tv.entity_id)`,
+  );
   console.log(
     `  \x1b[90mcleaned ${ids.length} probe case(s) and ${requestIds.length} probe service request(s) from the demonstration dataset\x1b[0m`,
   );

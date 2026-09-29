@@ -82,3 +82,9 @@ these in production paths.
 - Case display numbers are monotonic via sequences; a deleted case must never free its
   number for reuse.
 - Audit records are append-only and never modified by application code.
+- A case's satellite records (case events, comments, assignments, audit rows, and
+  `temporal_versions`) are addressed by case id, not by a foreign key. Deleting a case
+  therefore leaves them behind, so every path that deletes a case must remove them. The
+  verification harness sweeps for orphans on exit; the parcel timeline also filters
+  `temporal_versions` to `entity_type <> 'case'`, because case history is already rendered
+  from `case_events` and would otherwise appear twice.

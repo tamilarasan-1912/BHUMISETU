@@ -10,7 +10,7 @@ if (!container) throw new Error('BHUMISETU: #root container is missing from inde
 
 createRoot(container).render(
   <StrictMode>
-    <BrowserRouter future={{ v7_relativeSplatPath: true }}>
+    <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <AppStateProvider>
         <AppRoutes />
       </AppStateProvider>

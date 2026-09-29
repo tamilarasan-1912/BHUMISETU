@@ -124,6 +124,13 @@ enforces timeouts and bounded retries, and records the outcome. Contextual queri
 (Overpass) are rate-limited and radius-bounded; bulk sources (Geofabrik) declare an
 ingestion path but never download during a request.
 
+Status surfaces (`/api/gateway`, `/api/analytics`, `/api/health`) read adapter health from
+a snapshot and never wait on an upstream. A stale snapshot schedules a background refresh
+and is returned immediately; the response therefore stays in the tens of milliseconds even
+when Overpass or Bhuvan is timing out. Only an explicit `?probe=true` (the "Recompute" /
+"Probe live sources" control) waits for live probes, and its results are written back into
+the snapshot cache. The cache is warmed once at boot, after the listener is up.
+
 `services/gateway.ts` maps each department's records into the normalized internal entities
 (Parcel, Party, Right, Restriction, Document, Registration, Tax, Planning, Judiciary) and
 reports adapter status, sync counts and coverage.

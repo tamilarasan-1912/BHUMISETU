@@ -1129,8 +1129,8 @@ api.get('/analytics', requirePermission('analytics.read'), asyncHandler(async (_
   res.json(await buildAnalytics());
 }));
 
-api.get('/gateway', requirePermission('gateway.read'), asyncHandler(async (_req, res) => {
-  res.json({ departments: await departmentGateway() });
+api.get('/gateway', requirePermission('gateway.read'), asyncHandler(async (req, res) => {
+  res.json({ departments: await departmentGateway({ force: req.query.probe === 'true' }) });
 }));
 
 api.get('/data-sources', asyncHandler(async (req, res) => {
@@ -1151,7 +1151,7 @@ api.get('/data-sources', asyncHandler(async (req, res) => {
     });
     return;
   }
-  const { health, catalogue } = await sourceHealth();
+  const { health, catalogue } = await sourceHealth({ force: probe });
   res.json({ items: catalogue, health });
 }));
 

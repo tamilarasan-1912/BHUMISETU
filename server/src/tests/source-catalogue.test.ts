@@ -243,3 +243,43 @@ describe('demonstration fixtures', () => {
     }
   });
 });
+
+/**
+ * The gateway and analytics surfaces read adapter status on every page load.
+ * A status read must never wait on an unreachable upstream, so the default
+ * probe path is snapshot-only and only an explicit force pays the latency.
+ */
+describe('adapter health snapshot cache', () => {
+  it('serves a status read from a recorded snapshot', async () => {
+    const { putHealthSnapshot, readHealthSnapshot } = await import('../adapters/base.js');
+    const snapshot = {
+      sourceId: '__CACHE_CONTRACT__',
+      status: 'UPSTREAM_UNAVAILABLE' as const,
+      reachable: false,
+      latencyMs: 1234,
+      detail: 'test snapshot',
+      checkedAt: new Date().toISOString(),
+      lastSuccessAt: null,
+      requiresAuth: false,
+      configured: true,
+    };
+    putHealthSnapshot('__CACHE_CONTRACT__', snapshot, 60_000);
+    const read = readHealthSnapshot('__CACHE_CONTRACT__');
+    expect(read?.status).toBe('UPSTREAM_UNAVAILABLE');
+    expect(read?.latencyMs).toBe(1234);
+  });
+
+  it('returns an unprobed placeholder rather than blocking when no snapshot exists', async () => {
+    const { probeAll } = await import('../adapters/index.js');
+    const started = Date.now();
+    const health = await probeAll();
+    // A non-forced read must be effectively instantaneous; the real work is
+    // scheduled in the background and never awaited by the caller.
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(health.length).toBeGreaterThan(10);
+    for (const h of health) {
+      expect(h.sourceId).toBeTruthy();
+      expect(VALID_STATUS).toContain(h.status);
+    }
+  });
+});

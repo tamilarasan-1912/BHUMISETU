@@ -57,10 +57,9 @@ const STATUS_EVENT: Record<CaseStatus, string> = {
 const PRIORITY_ORDER = `CASE priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'NORMAL' THEN 2 ELSE 3 END`;
 
 export async function nextCaseNumber(client: Pick<typeof rawPool, 'query'> = rawPool): Promise<string> {
-  // Sequence is derived from the existing rows, then guarded by a transaction
-  // advisory lock in createCase so two concurrent inserts cannot collide.
-  const res = await client.query(`SELECT count(*)::int AS n FROM verification_cases`);
-  const n = Number(res.rows[0]?.n ?? 0) + 1;
+  // Monotonic sequence: a deleted case can never free its number for reuse.
+  const res = await client.query(`SELECT nextval('verification_case_number_seq')::int AS n`);
+  const n = Number(res.rows[0]?.n ?? 0);
   return `BHM-${new Date().getFullYear()}-${String(n).padStart(4, '0')}`;
 }
 
@@ -85,7 +84,10 @@ export async function createCase(input: CreateCaseInput) {
   const client = await rawPool.connect();
   try {
     await client.query('BEGIN');
-    await advisoryLock(client, `case-number-${input.parcelId}`);
+    // One global lock: the case number is global, so keying the lock on the
+    // parcel allowed two concurrent creates on different parcels to read the
+    // same sequence position.
+    await advisoryLock(client, 'verification-case-number');
 
     const caseNumber = await nextCaseNumber(client);
 
@@ -567,7 +569,7 @@ export async function createServiceRequest(input: {
   try {
     await client.query('BEGIN');
     await advisoryLock(client, 'service-request-number');
-    const n = Number((await client.query(`SELECT count(*)::int AS n FROM service_requests`)).rows[0]?.n ?? 0) + 1;
+    const n = Number((await client.query(`SELECT nextval('service_request_number_seq')::int AS n`)).rows[0]?.n ?? 0);
     const reference = `SR-${new Date().getFullYear()}-${String(n).padStart(5, '0')}`;
     const department = DEPARTMENT_FOR_SERVICE[input.requestType];
 

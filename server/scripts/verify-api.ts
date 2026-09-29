@@ -16,6 +16,32 @@ const BASE = process.env.BHUMISETU_BASE_URL ?? 'http://localhost:12001';
 let passed = 0;
 let failed = 0;
 
+/**
+ * Probe cases created by this harness are test fixtures, not governance acts.
+ * They are removed on exit so repeated runs do not accumulate junk in the
+ * demonstration dataset that officers would otherwise see in their queue.
+ */
+const probeCaseIds: string[] = [];
+
+async function cleanupProbes() {
+  if (probeCaseIds.length === 0) return;
+  const { rawPool } = await import('../src/db/client.js');
+  const ids = probeCaseIds;
+  // case_id is uuid while audit entity_id is text, so the casts differ.
+  for (const table of ['case_events', 'case_comments', 'case_assignments']) {
+    await rawPool.query(`DELETE FROM ${table} WHERE case_id = ANY($1::uuid[])`, [ids]);
+  }
+  await rawPool.query('UPDATE service_requests SET linked_case_id = NULL WHERE linked_case_id = ANY($1::uuid[])', [ids]);
+  await rawPool.query('DELETE FROM verification_cases WHERE case_id = ANY($1::uuid[])', [ids]);
+  await rawPool.query('DELETE FROM audit_logs WHERE entity_id = ANY($1::text[])', [ids]);
+  console.log(`  \x1b[90mcleaned ${ids.length} probe case(s) from the demonstration dataset\x1b[0m`);
+}
+
+function rememberCase(id: string) {
+  probeCaseIds.push(id);
+  return id;
+}
+
 async function check(name: string, fn: () => Promise<void> | void) {
   try {
     await fn();
@@ -295,7 +321,8 @@ await check('a citizen may raise a verification case', async () => {
     body: JSON.stringify({ parcelId: 'PARC-C', title: 'Citizen area query', description: 'Area differs from my patta.' }),
   });
   assert.equal(res.status, 201, `expected 201, got ${res.status}`);
-  const created = (await res.json()) as { status: string; assigned_role: string | null; assigned_department: string | null };
+  const created = (await res.json()) as { case_id: string; status: string; assigned_role: string | null; assigned_department: string | null };
+  rememberCase(created.case_id);
   assert.equal(created.status, 'SUBMITTED', 'a new case must start SUBMITTED');
   assert.ok(created.assigned_role, 'a new case must be routed to an officer role');
   assert.ok(created.assigned_department, 'a new case must be routed to a department');
@@ -308,6 +335,7 @@ await check('a citizen cannot change a case status', async () => {
       body: JSON.stringify({ parcelId: 'PARC-C', title: 'Citizen status probe', description: 'should not be allowed to update' }),
     })
   ).json()) as { case_id: string };
+  rememberCase(created.case_id);
   const res = await get(`/api/cases/${created.case_id}/update`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...citizenAuth },
@@ -336,6 +364,7 @@ await check('an officer can advance a case and the change is audited', async () 
       body: JSON.stringify({ parcelId: 'PARC-C', title: 'Officer workflow probe', description: 'advance through the workflow' }),
     })
   ).json()) as { case_id: string };
+  rememberCase(created.case_id);
   const updated = await get(`/api/cases/${created.case_id}/update`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...officerAuth },
@@ -366,6 +395,7 @@ await check('an illegal workflow jump is rejected', async () => {
       body: JSON.stringify({ parcelId: 'PARC-C', title: 'Illegal jump probe', description: 'resolve then re-open' }),
     })
   ).json()) as { case_id: string };
+  rememberCase(created.case_id);
   await get(`/api/cases/${created.case_id}/update`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...officerAuth },
@@ -378,6 +408,39 @@ await check('an illegal workflow jump is rejected', async () => {
   });
   assert.equal(res.status, 409, `expected 409 for a terminal-state transition, got ${res.status}`);
 });
+await check('a deleted case never frees its number for reuse', async () => {
+  // Regression: numbering used to be derived from count(*), so deleting a case
+  // made the next insert collide with a live case number. The sequence must stay
+  // monotonic across a delete.
+  const officerAuth = { Authorization: `Bearer ${await login('revenue', 'officer@123')}` };
+  const make = async (title: string) =>
+    (await (
+      await get('/api/cases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...officerAuth },
+        body: JSON.stringify({ parcelId: 'PARC-F', title }),
+      })
+    ).json()) as { case_id: string; case_number: string };
+
+  const first = await make('Numbering probe one');
+  const second = await make('Numbering probe two');
+
+  const { rawPool } = await import('../src/db/client.js');
+  await rawPool.query('DELETE FROM verification_cases WHERE case_id = $1::uuid', [first.case_id]);
+
+  const third = await make('Numbering probe three');
+  rememberCase(second.case_id);
+  rememberCase(third.case_id);
+
+  const suffix = (n: string) => Number(n.split('-').pop());
+  assert.notEqual(third.case_number, first.case_number, 'a deleted case number must not be handed out again');
+  assert.ok(
+    suffix(third.case_number) > suffix(second.case_number),
+    `case numbers must increase monotonically (${second.case_number} -> ${third.case_number})`,
+  );
+});
+
+await cleanupProbes();
 
 console.log(`\nRESULT: ${passed} passed, ${failed} failed\n`);
-if (failed > 0) process.exit(1);
+process.exit(failed > 0 ? 1 : 0);

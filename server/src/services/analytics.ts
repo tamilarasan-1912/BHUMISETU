@@ -246,11 +246,11 @@ export async function snapshotAnalytics(): Promise<void> {
   );
 }
 
-export async function sourceHealth(): Promise<{
+export async function sourceHealth(opts: { force?: boolean } = {}): Promise<{
   health: Awaited<ReturnType<typeof probeAll>>;
   catalogue: Record<string, unknown>[];
 }> {
-  const health = await probeAll();
+  const health = await probeAll({ force: opts.force });
   const res = await rawPool.query(`SELECT * FROM data_sources ORDER BY category, source_id`);
   return {
     health,
@@ -282,7 +282,7 @@ export async function sourceHealth(): Promise<{
   };
 }
 
-export async function departmentGateway() {
+export async function departmentGateway(opts: { force?: boolean } = {}) {
   const departments = ['Revenue', 'Registration', 'Municipal Tax', 'Planning', 'Judiciary', 'Survey/GIS'];
   const sourceForDept: Record<string, string> = {
     Revenue: 'REVENUE_DEMO',
@@ -292,7 +292,7 @@ export async function departmentGateway() {
     Judiciary: 'ECOURTS_DEMO',
     'Survey/GIS': 'CADASTRE_DEMO',
   };
-  const adapters = await probeAll();
+  const adapters = await probeAll({ force: opts.force });
   const out = [];
   for (const dept of departments) {
     const sourceId = sourceForDept[dept];

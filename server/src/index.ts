@@ -12,6 +12,7 @@ import { migrate } from './db/migrate.js';
 import { seed } from './db/seed.js';
 import { pingDatabase } from './db/client.js';
 import { reconcileAllFindings } from './services/intelligence.js';
+import { warmAdapterHealth } from './adapters/index.js';
 import { api } from './endpoints/api.js';
 import { HttpError } from './helpers/http.js';
 
@@ -125,6 +126,14 @@ async function main() {
       `[bhumisetu] listening on 0.0.0.0:${config.port} — database ${db.ok ? 'healthy' : 'UNAVAILABLE'} (${db.latencyMs}ms), env=${config.env}`,
     );
   });
+
+  // Warm the adapter-health cache after the listener is up. The first request to
+  // a status surface then reads a live snapshot instead of an "unprobed" one,
+  // and no request ever pays the upstream latency itself.
+  setTimeout(() => {
+    warmAdapterHealth();
+    console.log('[bhumisetu] adapter health warm-up started in the background');
+  }, 250).unref();
 
   const shutdown = (signal: string) => {
     console.log(`[bhumisetu] received ${signal}, shutting down`);

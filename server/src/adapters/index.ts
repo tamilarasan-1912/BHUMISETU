@@ -12,7 +12,7 @@ import {
   type SourceMetadata,
 } from './base.js';
 import type { SourceStatus } from '../types/domain.js';
-import { cachedHealth, readHealthSnapshot } from './base.js';
+import { cachedHealth, readHealthSnapshot, putHealthSnapshot, UNPROBED_DETAIL } from './base.js';
 
 export type AdapterHealthStatusAlias = SourceStatus;
 
@@ -629,18 +629,80 @@ export function adapterFor(sourceId: string): DataAdapter | undefined {
 
 const probeLocks = new Map<string, number>();
 
+/** True when a snapshot exists but its TTL has elapsed. */
+function snapshotIsStale(sourceId: string): boolean {
+  const snapshot = readHealthSnapshot(sourceId);
+  if (!snapshot) return true;
+  return Date.now() - new Date(snapshot.checkedAt).getTime() > config.adapterHealthTtlMs;
+}
+
+/**
+ * Status read used by the gateway and analytics surfaces.
+ *
+ * The default path must never block on an unreachable upstream — Overpass and
+ * Bhuvan routinely take tens of seconds, and a status read is not worth that
+ * latency. So the default reads the cached snapshot and lets the adapter's own
+ * cache trigger any background refresh. Only an explicit `force` (the
+ * "Recompute" / `?probe=true` path) waits for live probes.
+ */
 export async function probeAll(opts: { force?: boolean; maxAgeMs?: number } = {}): Promise<AdapterHealth[]> {
+  if (!opts.force) {
+    return adapters.map((a) => {
+      const snapshot = readHealthSnapshot(a.sourceId);
+      // Kick a background refresh when the snapshot is stale, but return the
+      // value we already have so the request stays fast. The shared-direct
+      // cache does not publish snapshots, so record the result here too.
+      if (snapshotIsStale(a.sourceId)) {
+        void a
+          .health()
+          .then((health) => putHealthSnapshot(a.sourceId, health, config.adapterHealthTtlMs))
+          .catch(() => undefined);
+      }
+      return (
+        snapshot ?? {
+          sourceId: a.sourceId,
+          status: 'NOT_CONFIGURED',
+          reachable: false,
+          latencyMs: null,
+          detail: UNPROBED_DETAIL,
+          checkedAt: new Date().toISOString(),
+          lastSuccessAt: null,
+          requiresAuth: false,
+          configured: false,
+        }
+      );
+    });
+  }
+
   const maxAge = opts.maxAgeMs ?? 60_000;
   const now = Date.now();
   const results = await Promise.all(
     adapters.map(async (a) => {
       const lock = probeLocks.get(a.sourceId);
       if (lock && now - lock < maxAge) {
-        return a.health();
+        const snapshot = readHealthSnapshot(a.sourceId);
+        if (snapshot) return snapshot;
       }
       probeLocks.set(a.sourceId, now);
-      return a.health();
+      const health = await a.health();
+      // Share the live result with the snapshot cache so a forced refresh also
+      // upgrades the value every non-forced status read will serve.
+      putHealthSnapshot(a.sourceId, health, config.adapterHealthTtlMs);
+      return health;
     }),
   );
   return results;
+}
+
+/**
+ * Background warm-up. Probes are fired after the HTTP listener is up so the
+ * catalogue converges to live status without any request paying the latency.
+ */
+export function warmAdapterHealth(): void {
+  for (const a of adapters) {
+    void a
+      .health()
+      .then((health) => putHealthSnapshot(a.sourceId, health, config.adapterHealthTtlMs))
+      .catch(() => undefined);
+  }
 }

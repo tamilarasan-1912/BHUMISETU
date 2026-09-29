@@ -227,6 +227,15 @@ export function readHealthSnapshot(sourceId: string): AdapterHealth | null {
   return entry.value;
 }
 
+/**
+ * Record a freshly probed health result in the shared snapshot cache. Used by
+ * the explicit refresh path so a forced probe also benefits subsequent
+ * non-forced status reads.
+ */
+export function putHealthSnapshot(sourceId: string, health: AdapterHealth, ttlMs: number): void {
+  healthCache.set(sourceId, { value: health, expiresAt: Date.now() + ttlMs, checkedAt: Date.now(), refreshing: false });
+}
+
 export function healthCacheStats() {
   return { entries: healthCache.size, probed: [...healthCache.values()].filter((h) => h.expiresAt > Date.now()).length };
 }

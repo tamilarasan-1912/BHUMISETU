@@ -784,6 +784,15 @@ CREATE INDEX IF NOT EXISTS integrity_evidence_finding_idx ON integrity_evidence(
 -- ---------------------------------------------------------------------------
 -- Verification cases
 -- ---------------------------------------------------------------------------
+-- Display-number sequences.
+--
+-- Case numbers and service-request references are human-facing and must never
+-- be reused. Deriving them from count(*) regresses as soon as any row is
+-- deleted, which then collides with an existing number on the next insert.
+-- A sequence is monotonic and survives deletes.
+CREATE SEQUENCE IF NOT EXISTS verification_case_number_seq;
+CREATE SEQUENCE IF NOT EXISTS service_request_number_seq;
+
 CREATE TABLE IF NOT EXISTS verification_cases (
   case_id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_number     text NOT NULL UNIQUE,
@@ -1047,3 +1056,27 @@ SELECT
   count(*) AS case_count
 FROM verification_cases
 GROUP BY 1, 2;
+
+-- ---------------------------------------------------------------------------
+-- Sequence reconciliation
+-- ---------------------------------------------------------------------------
+-- Existing deployments may already hold cases and service requests whose
+-- numbers came from the old count(*)-based generator. Lift each sequence above
+-- the highest number already in use so a migrated database cannot collide.
+-- GREATEST guards against a sequence that is already further along.
+SELECT setval(
+  'verification_case_number_seq',
+  GREATEST(
+    (SELECT coalesce(max(substring(case_number from '[0-9]+$')::int), 0) FROM verification_cases),
+    (SELECT last_value FROM verification_case_number_seq)
+  ),
+  true
+);
+SELECT setval(
+  'service_request_number_seq',
+  GREATEST(
+    (SELECT coalesce(max(substring(reference_number from '[0-9]+$')::int), 0) FROM service_requests),
+    (SELECT last_value FROM service_request_number_seq)
+  ),
+  true
+);

@@ -20,6 +20,9 @@ export async function migrate(opts: { reset?: boolean; quiet?: boolean } = {}): 
       // geometry_columns, raster_columns, ...) are never touched: they belong to
       // the extension, not to BHUMISETU.
       const owned = [
+        // sequences first: they are not owned by any table, so CASCADE will not
+        // remove them and a stale value would leak across a reset
+        'verification_case_number_seq', 'service_request_number_seq',
         // views first
         'v_case_load', 'v_parcel_risk',
         // then tables (CASCADE resolves FKs)
